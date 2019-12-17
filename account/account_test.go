@@ -1,12 +1,12 @@
 package account
 
 import (
-	"github.com/DefinitelyNotAGoat/go-tezos/v2/block"
+	"github.com/noobier666/go-tezos/v2/block"
 	"testing"
 
 	"gotest.tools/assert"
 
-	tzc "github.com/DefinitelyNotAGoat/go-tezos/v2/client"
+	tzc "github.com/noobier666/go-tezos/v2/client"
 )
 
 func Test_CreateWalletWithMnemonic(t *testing.T) {

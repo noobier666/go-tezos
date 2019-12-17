@@ -3,7 +3,7 @@ package contracts
 import (
 	"testing"
 
-	tzc "github.com/DefinitelyNotAGoat/go-tezos/v2/client"
+	tzc "github.com/noobier666/go-tezos/v2/client"
 	"gotest.tools/assert"
 )
 

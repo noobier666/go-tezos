@@ -1,16 +1,16 @@
 package gt
 
 import (
-	"github.com/DefinitelyNotAGoat/go-tezos/v2/account"
-	"github.com/DefinitelyNotAGoat/go-tezos/v2/block"
-	tzc "github.com/DefinitelyNotAGoat/go-tezos/v2/client"
-	"github.com/DefinitelyNotAGoat/go-tezos/v2/contracts"
-	"github.com/DefinitelyNotAGoat/go-tezos/v2/cycle"
-	"github.com/DefinitelyNotAGoat/go-tezos/v2/delegate"
-	"github.com/DefinitelyNotAGoat/go-tezos/v2/network"
-	"github.com/DefinitelyNotAGoat/go-tezos/v2/node"
-	"github.com/DefinitelyNotAGoat/go-tezos/v2/operations"
-	"github.com/DefinitelyNotAGoat/go-tezos/v2/snapshot"
+	"github.com/noobier666/go-tezos/v2/account"
+	"github.com/noobier666/go-tezos/v2/block"
+	tzc "github.com/noobier666/go-tezos/v2/client"
+	"github.com/noobier666/go-tezos/v2/contracts"
+	"github.com/noobier666/go-tezos/v2/cycle"
+	"github.com/noobier666/go-tezos/v2/delegate"
+	"github.com/noobier666/go-tezos/v2/network"
+	"github.com/noobier666/go-tezos/v2/node"
+	"github.com/noobier666/go-tezos/v2/operations"
+	"github.com/noobier666/go-tezos/v2/snapshot"
 	"github.com/pkg/errors"
 )
 
