@@ -3,7 +3,10 @@ package operations
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"math/big"
 	"strconv"
+	"strings"
 
 	"golang.org/x/crypto/blake2b"
 
@@ -78,7 +81,7 @@ func (o *OperationService) CreateBatchPayment(payments []delegate.Payment, walle
 	for k := range batches {
 
 		// Convert (ie: forge) each 'Payment' into an actual Tezos transfer operation
-		operationBytes, operationContents, newCounter, err := o.forgeOperationBytes(blockHead.Hash, counter, wallet, batches[k], paymentFee, gasLimit)
+		operationBytes, operationContents, newCounter, err := o.forgeOperationBytes(blockHead, counter, wallet, batches[k], paymentFee, gasLimit)
 		if err != nil {
 			return operationSignatures, errors.Wrap(err, "could not create batch payment")
 		}
@@ -150,27 +153,35 @@ func (o *OperationService) signOperationBytes(operationBytes string, wallet acco
 	return edsig, nil
 }
 
-func (o *OperationService) forgeOperationBytes(branchHash string, counter int, wallet account.Wallet, batch []delegate.Payment, paymentFee int, gaslimit int) (string, Conts, int, error) {
+func (o *OperationService) IsNewAddr(branchHash, address string) bool {
+	resp, err := o.tzclient.Get("/chains/main/blocks/"+branchHash+"/context/contracts/"+address+"/manager_key", nil)
+	if err != nil {
+		panic(errors.Wrapf(err, "could not get manager key for address= %s'", address))
+	}
+	return strings.TrimSpace(string(resp)) == "null"
+}
+
+func (o *OperationService) forgeOperationBytes(branch block.Block, counter int, wallet account.Wallet, batch []delegate.Payment, paymentFee int, gaslimit int) (string, Conts, int, error) {
 
 	var contents Conts
 	var combinedOps []block.Contents
 
 	//left here to display how to reveal a new wallet (needs funds to be revealed!)
-	/**
-	  combinedOps = append(combinedOps, StructContents{Kind: "reveal", PublicKey: wallet.pk , Source: wallet.address, Fee: "0", GasLimit: "127", StorageLimit: "0", Counter: strCounter})
-	  counter++
-	**/
+	if o.IsNewAddr(branch.Hash, wallet.Address) {
+		fmt.Printf("add reveal operation for address = %s \n ", wallet.Address)
+		combinedOps = append(combinedOps, block.Contents{Kind: "reveal", PublicKey: wallet.Pk, Source: wallet.Address, Fee: strconv.Itoa(paymentFee), GasLimit: "15000", StorageLimit: "0", Counter: strconv.Itoa(counter)})
+		counter++
+	}
 
 	for k := range batch {
 
 		if batch[k].Amount > 0 {
-
 			operation := block.Contents{
 				Kind:         "transaction",
 				Source:       wallet.Address,
-				Fee:          strconv.Itoa(paymentFee),
+				Fee:          "0",
 				GasLimit:     strconv.Itoa(gaslimit),
-				StorageLimit: "0",
+				StorageLimit: "60000",
 				Amount:       strconv.FormatFloat(crypto.RoundPlus(batch[k].Amount, 0), 'f', -1, 64),
 				Destination:  batch[k].Address,
 				Counter:      strconv.Itoa(counter),
@@ -180,7 +191,7 @@ func (o *OperationService) forgeOperationBytes(branchHash string, counter int, w
 		}
 	}
 	contents.Contents = combinedOps
-	contents.Branch = branchHash
+	contents.Branch = branch.Hash
 
 	var opBytes string
 
@@ -195,7 +206,101 @@ func (o *OperationService) forgeOperationBytes(branchHash string, counter int, w
 		return "", contents, counter, errors.Wrapf(err, "could not forge operation '%s' with contents '%s'", forge, contents.string())
 	}
 
+	signStr, err := o.signOperationBytes(opBytes, wallet)
+	if err != nil {
+		panic(err)
+	}
+	if err = o.EstimateGas(&RunOpt{Branch: branch.Hash, Contents: contents.Contents, Signature: signStr}, branch.ChainID, strconv.Itoa(paymentFee)); err != nil {
+		return "", contents, counter, errors.Wrapf(err, "estimate tx failure")
+	}
+	output, err = o.tzclient.Post(forge, contents.string())
+	if err != nil {
+		return "", contents, counter, errors.Wrapf(err, "could not forge operation '%s' with contents '%s'", forge, contents.string())
+	}
+
+	err = json.Unmarshal(output, &opBytes)
+	if err != nil {
+		return "", contents, counter, errors.Wrapf(err, "could not forge operation '%s' with contents '%s'", forge, contents.string())
+	}
 	return opBytes, contents, counter, nil
+}
+
+type RunOpt struct {
+	Branch    string           `json:"branch"`
+	Contents  []block.Contents `json:"contents"`
+	Signature string           `json:"signature"`
+}
+
+func (o *OperationService) EstimateGas(ro *RunOpt, chainId, fee string) error {
+
+	reqParam := map[string]interface{}{"operation": *ro, "chain_id": chainId}
+	operationScript := "/chains/main/blocks/head/helpers/scripts/run_operation"
+	reqBytes, _ := json.Marshal(reqParam)
+	output, err := o.tzclient.Post(operationScript, string(reqBytes))
+	if err != nil {
+		return err
+	}
+	// Conts is helper structure to build out the contents of a a transfer operation to post to the Tezos RPC
+	type runScriptRes struct {
+		Contents  []block.Contents `json:"contents"`
+		Signature string           `json:"signature"`
+	}
+	var cons runScriptRes
+
+	if err = json.Unmarshal(output, &cons); err != nil {
+		return err
+	}
+	for _, c := range cons.Contents {
+
+		if c.Kind != "transaction" && c.Kind != "reveal" {
+			continue
+		}
+		if c.Metadata.OperationResult.Status != "applied" { // exist invalid operation
+			errMsg := ""
+			for _, opr := range c.Metadata.OperationResult.Errors {
+				errMsg += " [ Kind : " + opr.Kind + " , ID : " + opr.ID + " ] "
+			}
+			return errors.New(errMsg)
+		}
+		estGas := c.Metadata.OperationResult.ConsumedGas
+		estStorage := "0"
+		updateMap := map[string]*big.Int{}
+		addrSet := make([]string, 0, 2)
+		for _, bu := range c.Metadata.OperationResult.BalanceUpdates { // handle storage cost
+			bigVal, ok := new(big.Int).SetString(bu.Change, 10)
+			if !ok {
+				return fmt.Errorf("value = %v cannot converted to big.Int", bu.Change)
+			}
+			if currVal, ok := updateMap[bu.Contract]; ok {
+				updateMap[bu.Contract] = new(big.Int).Add(currVal, bigVal)
+			} else {
+				updateMap[bu.Contract] = bigVal
+				addrSet = append(addrSet, bu.Contract)
+			}
+		}
+		if c.Kind == "transaction" {
+			if len(addrSet) > 2 {
+				return fmt.Errorf("expected = %v , has = %v", 2, len(addrSet))
+			}
+			stg := new(big.Int).Div(new(big.Int).Abs(new(big.Int).Add(updateMap[addrSet[0]], updateMap[addrSet[1]])), big.NewInt(1000))
+			if stg.Cmp(big.NewInt(500)) > 0 {
+				stg = big.NewInt(500)
+			}
+			estStorage = stg.String()
+		}
+
+		for ind, rawCont := range ro.Contents {
+			if c.Source == rawCont.Source && c.Counter == rawCont.Counter {
+				ro.Contents[ind].GasLimit = estGas
+				ro.Contents[ind].StorageLimit = estStorage
+				ro.Contents[ind].Fee = fee
+			}
+		}
+		if estStorage != "0" {
+			fmt.Printf("destnation = %s is a new address for the blockchain , pay storage  =%v \n", c.Destination, estStorage)
+		}
+	}
+	return nil
 }
 
 // Pre-apply an operation, or batch of operations, to a Tezos node to ensure correctness

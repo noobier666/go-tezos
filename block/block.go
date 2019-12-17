@@ -93,9 +93,10 @@ type BalanceUpdates struct {
 
 // OperationResult is the OperationResult found in metadata of block returned by the Tezos RPC API.
 type OperationResult struct {
-	Status      string  `json:"status"`
-	ConsumedGas string  `json:"consumed_gas,omitempty"`
-	Errors      []Error `json:"errors,omitempty"`
+	Status         string           `json:"status"`
+	ConsumedGas    string           `json:"consumed_gas,omitempty"`
+	Errors         []Error          `json:"errors,omitempty"`
+	BalanceUpdates []BalanceUpdates `json:"balance_updates"`
 }
 
 // Operations is the Operations found in a block returned by the Tezos RPC API.
@@ -129,6 +130,7 @@ type Contents struct {
 	Proposals        []string          `json:"proposals,omitempty"`
 	Ballot           string            `json:"ballot,omitempty"`
 	Metadata         *ContentsMetadata `json:"metadata,omitempty"`
+	PublicKey        string            `json:"public_key,omitempty"`
 }
 
 // ContentsMetadata is the Metadata found in the Contents in a operation of a block returned by the Tezos RPC API.

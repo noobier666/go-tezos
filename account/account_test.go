@@ -1,6 +1,7 @@
 package account
 
 import (
+	"github.com/DefinitelyNotAGoat/go-tezos/v2/block"
 	"testing"
 
 	"gotest.tools/assert"
@@ -142,6 +143,7 @@ func Test_GetBalanceAtSnapshot(t *testing.T) {
 }
 
 func Test_GetBalance(t *testing.T) {
+	tzclient := tzc.NewClient("http://18.179.142.157:8732")
 	var cases = []struct {
 		address  string
 		block    int
@@ -151,15 +153,17 @@ func Test_GetBalance(t *testing.T) {
 		{
 			address: "tz1U8sXoQWGUMQrfZeAYwAzMZUvWwy7mfpPQ",
 			block:   100000,
-			tzclient: &clientMock{
-				ReturnBody: []byte(`"450209832"`),
-			},
-			want: 450.209832,
+			//tzclient: &clientMock{
+			//	ReturnBody: []byte(`"450209832"`),
+			//},
+
+			tzclient: tzc.NewClient("http://18.179.142.157:8732"),
+			want:     450.209832,
 		},
 	}
-
+	//gt.NewGoTezos("http://18.179.142.157:8732")
 	for _, tc := range cases {
-		accountService := NewAccountService(tc.tzclient, &blockServiceMock{}, &snapshotServiceMock{})
+		accountService := NewAccountService(tc.tzclient, block.NewBlockService(tzclient), &snapshotServiceMock{})
 		bal, err := accountService.GetBalanceAtBlock(tc.address, tc.block)
 		assert.NilError(t, err)
 		assert.Equal(t, bal, tc.want)
